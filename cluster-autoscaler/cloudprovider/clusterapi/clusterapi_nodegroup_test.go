@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/utils/pointer"
@@ -680,7 +681,7 @@ func TestNodeGroupDecreaseSizeErrors(t *testing.T) {
 }
 
 func TestNodeGroupDeleteNodes(t *testing.T) {
-	test := func(t *testing.T, testConfig *testConfig) {
+	test := func(t *testing.T, testConfig *testConfig, parallel bool) {
 		controller, stop := mustCreateTestController(t, testConfig)
 		defer stop()
 
@@ -713,8 +714,18 @@ func TestNodeGroupDeleteNodes(t *testing.T) {
 			}
 		}
 
-		if err := ng.DeleteNodes(testConfig.nodes[5:]); err != nil {
-			t.Errorf("unexpected error: %v", err)
+		if parallel {
+			// Send all nodes to delete together
+			if err := ng.DeleteNodes(testConfig.nodes[5:]); err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		} else {
+			// Send nodes to delete in series
+			for _, node := range testConfig.nodes[5:] {
+				if err := ng.DeleteNodes([]*corev1.Node{node}); err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
 		}
 
 		for i := 5; i < len(testConfig.machines); i++ {
@@ -754,18 +765,32 @@ func TestNodeGroupDeleteNodes(t *testing.T) {
 	// test() function because sort.Strings() will not do natural
 	// sorting and the expected semantics in test() will fail.
 
-	t.Run("MachineSet", func(t *testing.T) {
+	t.Run("MachineSet (parallel)", func(t *testing.T) {
 		test(t, createMachineSetTestConfig(testNamespace, 10, map[string]string{
 			nodeGroupMinSizeAnnotationKey: "1",
 			nodeGroupMaxSizeAnnotationKey: "10",
-		}))
+		}), true)
 	})
 
-	t.Run("MachineDeployment", func(t *testing.T) {
+	t.Run("MachineDeployment (parallel)", func(t *testing.T) {
 		test(t, createMachineDeploymentTestConfig(testNamespace, 10, map[string]string{
 			nodeGroupMinSizeAnnotationKey: "1",
 			nodeGroupMaxSizeAnnotationKey: "10",
-		}))
+		}), true)
+	})
+
+	t.Run("MachineSet (serial)", func(t *testing.T) {
+		test(t, createMachineSetTestConfig(testNamespace, 10, map[string]string{
+			nodeGroupMinSizeAnnotationKey: "1",
+			nodeGroupMaxSizeAnnotationKey: "10",
+		}), false)
+	})
+
+	t.Run("MachineDeployment (serial)", func(t *testing.T) {
+		test(t, createMachineDeploymentTestConfig(testNamespace, 10, map[string]string{
+			nodeGroupMinSizeAnnotationKey: "1",
+			nodeGroupMaxSizeAnnotationKey: "10",
+		}), false)
 	})
 }
 

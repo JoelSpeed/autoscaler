@@ -26,40 +26,53 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/klog"
 	"k8s.io/utils/pointer"
 )
 
 type machineDeploymentScalableResource struct {
 	controller        *machineController
 	machineDeployment *MachineDeployment
+	lock              sync.RWMutex
 	maxSize           int
 	minSize           int
 }
 
 var _ scalableResource = (*machineDeploymentScalableResource)(nil)
 
-func (r machineDeploymentScalableResource) ID() string {
+func (r *machineDeploymentScalableResource) ID() string {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return path.Join(r.Namespace(), r.Name())
 }
 
-func (r machineDeploymentScalableResource) MaxSize() int {
+func (r *machineDeploymentScalableResource) MaxSize() int {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return r.maxSize
 }
 
-func (r machineDeploymentScalableResource) MinSize() int {
+func (r *machineDeploymentScalableResource) MinSize() int {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return r.minSize
 }
 
-func (r machineDeploymentScalableResource) Name() string {
+func (r *machineDeploymentScalableResource) Name() string {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return r.machineDeployment.Name
 }
 
-func (r machineDeploymentScalableResource) Namespace() string {
+func (r *machineDeploymentScalableResource) Namespace() string {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return r.machineDeployment.Namespace
 }
 
-func (r machineDeploymentScalableResource) Nodes() ([]string, error) {
+func (r *machineDeploymentScalableResource) Nodes() ([]string, error) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
 	var result []string
 
 	if err := r.controller.filterAllMachineSets(func(machineSet *MachineSet) error {
@@ -78,7 +91,10 @@ func (r machineDeploymentScalableResource) Nodes() ([]string, error) {
 	return result, nil
 }
 
-func (r machineDeploymentScalableResource) Replicas() int32 {
+func (r *machineDeploymentScalableResource) Replicas() int32 {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
 	if r.machineDeployment.Spec.Replicas == nil {
 		klog.Warningf("MachineDeployment %q has nil spec.replicas. This is unsupported behaviour. Falling back to status.replicas.", r.machineDeployment.Name)
 	}
@@ -87,7 +103,10 @@ func (r machineDeploymentScalableResource) Replicas() int32 {
 	return pointer.Int32PtrDerefOr(r.machineDeployment.Spec.Replicas, r.machineDeployment.Status.Replicas)
 }
 
-func (r machineDeploymentScalableResource) SetSize(nreplicas int32) error {
+func (r *machineDeploymentScalableResource) SetSize(nreplicas int32) error {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	u, err := r.controller.dynamicclient.Resource(*r.controller.machineDeploymentResource).Namespace(r.machineDeployment.Namespace).Get(context.TODO(), r.machineDeployment.Name, metav1.GetOptions{})
 
 	if err != nil {
@@ -104,14 +123,18 @@ func (r machineDeploymentScalableResource) SetSize(nreplicas int32) error {
 	}
 
 	_, updateErr := r.controller.dynamicclient.Resource(*r.controller.machineDeploymentResource).Namespace(u.GetNamespace()).Update(context.TODO(), u, metav1.UpdateOptions{})
-	return updateErr
+	if updateErr != nil {
+		return updateErr
+	}
+
+	r.machineDeployment = newMachineDeploymentFromUnstructured(u)
+	return nil
 }
 
-func (r machineDeploymentScalableResource) UnmarkMachineForDeletion(machine *Machine) error {
-	return unmarkMachineForDeletion(r.controller, machine)
-}
+func (r *machineDeploymentScalableResource) MarkMachineForDeletion(machine *Machine) error {
+	r.lock.Lock()
+	defer r.lock.Unlock()
 
-func (r machineDeploymentScalableResource) MarkMachineForDeletion(machine *Machine) error {
 	u, err := r.controller.dynamicclient.Resource(*r.controller.machineResource).Namespace(machine.Namespace).Get(context.TODO(), machine.Name, metav1.GetOptions{})
 
 	if err != nil {
@@ -131,7 +154,12 @@ func (r machineDeploymentScalableResource) MarkMachineForDeletion(machine *Machi
 	u.SetAnnotations(annotations)
 
 	_, updateErr := r.controller.dynamicclient.Resource(*r.controller.machineResource).Namespace(u.GetNamespace()).Update(context.TODO(), u, metav1.UpdateOptions{})
-	return updateErr
+	if updateErr != nil {
+		return updateErr
+	}
+
+	r.machineDeployment = newMachineDeploymentFromUnstructured(u)
+	return nil
 }
 
 func newMachineDeploymentScalableResource(controller *machineController, machineDeployment *MachineDeployment) (*machineDeploymentScalableResource, error) {
@@ -148,30 +176,44 @@ func newMachineDeploymentScalableResource(controller *machineController, machine
 	}, nil
 }
 
-func (r machineDeploymentScalableResource) Taints() []apiv1.Taint {
+func (r *machineDeploymentScalableResource) Taints() []apiv1.Taint {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return r.machineDeployment.Spec.Template.Spec.Taints
 }
 
-func (r machineDeploymentScalableResource) Labels() map[string]string {
+func (r *machineDeploymentScalableResource) Labels() map[string]string {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return r.machineDeployment.Spec.Template.Spec.Labels
 }
 
-func (r machineDeploymentScalableResource) CanScaleFromZero() bool {
+func (r *machineDeploymentScalableResource) CanScaleFromZero() bool {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return scaleFromZeroEnabled(r.machineDeployment.Annotations)
 }
 
-func (r machineDeploymentScalableResource) InstanceCPUCapacity() (resource.Quantity, error) {
+func (r *machineDeploymentScalableResource) InstanceCPUCapacity() (resource.Quantity, error) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return parseCPUCapacity(r.machineDeployment.Annotations)
 }
 
-func (r machineDeploymentScalableResource) InstanceMemoryCapacity() (resource.Quantity, error) {
+func (r *machineDeploymentScalableResource) InstanceMemoryCapacity() (resource.Quantity, error) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return parseMemoryCapacity(r.machineDeployment.Annotations)
 }
 
-func (r machineDeploymentScalableResource) InstanceGPUCapacity() (resource.Quantity, error) {
+func (r *machineDeploymentScalableResource) InstanceGPUCapacity() (resource.Quantity, error) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return parseGPUCapacity(r.machineDeployment.Annotations)
 }
 
-func (r machineDeploymentScalableResource) InstanceMaxPodsCapacity() (resource.Quantity, error) {
+func (r *machineDeploymentScalableResource) InstanceMaxPodsCapacity() (resource.Quantity, error) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
 	return parseMaxPodsCapacity(r.machineDeployment.Annotations)
 }
