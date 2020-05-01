@@ -141,15 +141,13 @@ func (r *machineSetScalableResource) MarkMachineForDeletion(machine *Machine) er
 	u.SetAnnotations(annotations)
 
 	_, updateErr := r.controller.dynamicclient.Resource(*r.controller.machineResource).Namespace(u.GetNamespace()).Update(context.TODO(), u, metav1.UpdateOptions{})
-	if updateErr != nil {
-		return updateErr
-	}
-
-	r.machineSet = newMachineSetFromUnstructured(u)
-	return nil
+	return updateErr
 }
 
-func (r machineSetScalableResource) UnmarkMachineForDeletion(machine *Machine) error {
+func (r *machineSetScalableResource) UnmarkMachineForDeletion(machine *Machine) error {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
 	return unmarkMachineForDeletion(r.controller, machine)
 }
 

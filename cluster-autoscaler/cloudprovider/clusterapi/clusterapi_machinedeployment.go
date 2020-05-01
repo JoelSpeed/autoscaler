@@ -155,12 +155,14 @@ func (r *machineDeploymentScalableResource) MarkMachineForDeletion(machine *Mach
 	u.SetAnnotations(annotations)
 
 	_, updateErr := r.controller.dynamicclient.Resource(*r.controller.machineResource).Namespace(u.GetNamespace()).Update(context.TODO(), u, metav1.UpdateOptions{})
-	if updateErr != nil {
-		return updateErr
-	}
+	return updateErr
+}
 
-	r.machineDeployment = newMachineDeploymentFromUnstructured(u)
-	return nil
+func (r *machineDeploymentScalableResource) UnmarkMachineForDeletion(machine *Machine) error {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+
+	return unmarkMachineForDeletion(r.controller, machine)
 }
 
 func newMachineDeploymentScalableResource(controller *machineController, machineDeployment *MachineDeployment) (*machineDeploymentScalableResource, error) {
