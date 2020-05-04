@@ -48,7 +48,7 @@ type scalableResource interface {
 	Nodes() ([]string, error)
 
 	// SetSize() sets the replica count of the resource
-	SetSize(nreplicas int32) error
+	SetSize(nreplicas int32, predicates ...predicateFunc) error
 
 	// Replicas returns the current replica count of the resource
 	Replicas() int32
@@ -61,6 +61,7 @@ type scalableResource interface {
 
 	Labels() map[string]string
 	Taints() []apiv1.Taint
+	ResourceVersion() string
 	CanScaleFromZero() bool
 	InstanceCPUCapacity() (resource.Quantity, error)
 	InstanceMemoryCapacity() (resource.Quantity, error)
@@ -86,4 +87,31 @@ func unmarkMachineForDeletion(controller *machineController, machine *Machine) e
 		return updateErr
 	}
 	return nil
+}
+
+type predicateFunc interface {
+	checkMachineSet(m *MachineSet) error
+	checkMachineDeployment(m *MachineDeployment) error
+}
+
+type resourceVersionPredicate struct {
+	resourceVersion string
+}
+
+func (r *resourceVersionPredicate) checkMachineSet(m *MachineSet) error {
+	if m.ObjectMeta.ResourceVersion != r.resourceVersion {
+		return fmt.Errorf("conflict: resource version has changed: expected: %q, got: %q", r.resourceVersion, m.ObjectMeta.ResourceVersion)
+	}
+	return nil
+}
+
+func (r *resourceVersionPredicate) checkMachineDeployment(m *MachineDeployment) error {
+	if m.ObjectMeta.ResourceVersion != r.resourceVersion {
+		return fmt.Errorf("conflict: resource version has changed: expected: %q, got: %q", r.resourceVersion, m.ObjectMeta.ResourceVersion)
+	}
+	return nil
+}
+
+func newResourceVersionPredicate(r string) *resourceVersionPredicate {
+	return &resourceVersionPredicate{resourceVersion: r}
 }

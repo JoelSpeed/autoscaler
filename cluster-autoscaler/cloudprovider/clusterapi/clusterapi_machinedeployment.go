@@ -105,7 +105,7 @@ func (r *machineDeploymentScalableResource) Replicas() int32 {
 	return pointer.Int32PtrDerefOr(r.machineDeployment.Spec.Replicas, r.machineDeployment.Status.Replicas)
 }
 
-func (r *machineDeploymentScalableResource) SetSize(nreplicas int32) error {
+func (r *machineDeploymentScalableResource) SetSize(nreplicas int32, predicates ...predicateFunc) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -117,6 +117,14 @@ func (r *machineDeploymentScalableResource) SetSize(nreplicas int32) error {
 
 	if u == nil {
 		return fmt.Errorf("unknown machineDeployment %s", r.machineDeployment.Name)
+	}
+
+	// Check predicates before updating size
+	machineDeployment := newMachineDeploymentFromUnstructured(u)
+	for _, p := range predicates {
+		if err := p.checkMachineDeployment(machineDeployment); err != nil {
+			return fmt.Errorf("error checking predicate: %v", err)
+		}
 	}
 
 	u = u.DeepCopy()
@@ -184,6 +192,12 @@ func (r *machineDeploymentScalableResource) Taints() []apiv1.Taint {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.machineDeployment.Spec.Template.Spec.Taints
+}
+
+func (r *machineDeploymentScalableResource) ResourceVersion() string {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	return r.machineDeployment.ObjectMeta.ResourceVersion
 }
 
 func (r *machineDeploymentScalableResource) Labels() map[string]string {

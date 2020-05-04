@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	gpuapis "k8s.io/autoscaler/cluster-autoscaler/utils/gpu"
+	"k8s.io/klog"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	schedulernodeinfo "k8s.io/kubernetes/pkg/scheduler/nodeinfo"
 )
@@ -122,6 +123,9 @@ func (ng *nodegroup) DeleteNodes(nodes []*corev1.Node) error {
 	// suitable candidate for deletion and drop the replica count
 	// by 1. Fail fast on any error.
 	for _, node := range nodes {
+		replicas := ng.scalableResource.Replicas()
+		rvPredicate := newResourceVersionPredicate(ng.scalableResource.ResourceVersion())
+
 		machine, err := ng.machineController.findMachineByProviderID(normalizedProviderString(node.Spec.ProviderID))
 		if err != nil {
 			return err
@@ -149,12 +153,11 @@ func (ng *nodegroup) DeleteNodes(nodes []*corev1.Node) error {
 			return err
 		}
 
-		if err := ng.scalableResource.SetSize(replicas - 1); err != nil {
+		klog.V(3).Infof("Scaling MachineSet %q to %d replicas", ng.scalableResource.ID(), replicas-1)
+		if err := ng.scalableResource.SetSize(replicas-1, rvPredicate); err != nil {
 			nodeGroup.scalableResource.UnmarkMachineForDeletion(machine)
 			return err
 		}
-
-		replicas--
 	}
 
 	return nil

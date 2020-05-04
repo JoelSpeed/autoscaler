@@ -90,7 +90,7 @@ func (r machineSetScalableResource) Replicas() int32 {
 	return pointer.Int32PtrDerefOr(r.machineSet.Spec.Replicas, r.machineSet.Status.Replicas)
 }
 
-func (r *machineSetScalableResource) SetSize(nreplicas int32) error {
+func (r *machineSetScalableResource) SetSize(nreplicas int32, predicates ...predicateFunc) error {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
@@ -102,6 +102,14 @@ func (r *machineSetScalableResource) SetSize(nreplicas int32) error {
 
 	if u == nil {
 		return fmt.Errorf("unknown machineSet %s", r.machineSet.Name)
+	}
+
+	// Check predicates before updating size
+	machineSet := newMachineSetFromUnstructured(u)
+	for _, p := range predicates {
+		if err := p.checkMachineSet(machineSet); err != nil {
+			return fmt.Errorf("error checking predicate: %v", err)
+		}
 	}
 
 	u = u.DeepCopy()
@@ -175,6 +183,12 @@ func (r *machineSetScalableResource) Taints() []apiv1.Taint {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 	return r.machineSet.Spec.Template.Spec.Taints
+}
+
+func (r *machineSetScalableResource) ResourceVersion() string {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	return r.machineSet.ObjectMeta.ResourceVersion
 }
 
 func (r *machineSetScalableResource) CanScaleFromZero() bool {
