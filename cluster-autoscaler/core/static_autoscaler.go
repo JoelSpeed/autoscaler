@@ -191,7 +191,7 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 	scaleDown := a.scaleDown
 	autoscalingContext := a.AutoscalingContext
 
-	klog.V(4).Info("Starting main loop")
+	klog.V(1).Info("Starting main loop")
 
 	stateUpdateStart := time.Now()
 	if err := a.PredicateChecker.SnapshotClusterState(); err != nil {
@@ -206,6 +206,17 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 	if a.actOnEmptyCluster(allNodes, readyNodes, currentTime) {
 		return nil
 	}
+
+	allNodeIDs := make(map[string]string)
+	for _, node := range allNodes {
+		allNodeIDs[node.Name] = node.Spec.ProviderID
+	}
+	readyNodeIDs := make(map[string]string)
+	for _, node := range readyNodes {
+		readyNodeIDs[node.Name] = node.Spec.ProviderID
+	}
+	klog.V(1).Infof("All Nodes (%d): %v", len(allNodeIDs), allNodeIDs)
+	klog.V(1).Infof("Ready Nodes (%d): %v", len(readyNodeIDs), readyNodeIDs)
 
 	daemonsets, err := a.ListerRegistry.DaemonSetLister().List(labels.Everything())
 	if err != nil {
@@ -265,8 +276,11 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 	// Check if there are any nodes that failed to register in Kubernetes
 	// master.
 	unregisteredNodes := a.clusterStateRegistry.GetUnregisteredNodes()
+	klog.V(1).Infof("%d unregistered nodes present", len(unregisteredNodes))
 	if len(unregisteredNodes) > 0 {
-		klog.V(1).Infof("%d unregistered nodes present", len(unregisteredNodes))
+		for _, node := range unregisteredNodes {
+			klog.V(1).Infof("Instance %q is unregistered", node.Node.Name)
+		}
 		removedAny, err := removeOldUnregisteredNodes(unregisteredNodes, autoscalingContext,
 			a.clusterStateRegistry, currentTime, autoscalingContext.LogRecorder)
 		// There was a problem with removing unregistered nodes. Retry in the next loop.

@@ -308,6 +308,7 @@ func (csr *ClusterStateRegistry) UpdateNodes(nodes []*apiv1.Node, nodeInfosForGr
 	if err != nil {
 		return err
 	}
+	klog.V(1).Infof("CloudProvider NodeInstances: %+v", cloudProviderNodeInstances)
 	notRegistered := getNotRegisteredNodes(nodes, cloudProviderNodeInstances, currentTime)
 
 	csr.Lock()
@@ -963,11 +964,13 @@ func (csr *ClusterStateRegistry) getCloudProviderNodeInstances() (map[string][]c
 func getNotRegisteredNodes(allNodes []*apiv1.Node, cloudProviderNodeInstances map[string][]cloudprovider.Instance, time time.Time) []UnregisteredNode {
 	registered := sets.NewString()
 	for _, node := range allNodes {
+		klog.V(1).Infof("Adding instance %q (%q) to registered nodes", node.Name, node.Spec.ProviderID)
 		registered.Insert(node.Spec.ProviderID)
 	}
 	notRegistered := make([]UnregisteredNode, 0)
 	for _, instances := range cloudProviderNodeInstances {
 		for _, instance := range instances {
+			klog.V(1).Infof("Checking instance %q is registered", instance.Id)
 			if !registered.Has(instance.Id) {
 				notRegistered = append(notRegistered, UnregisteredNode{
 					Node:              fakeNode(instance),
