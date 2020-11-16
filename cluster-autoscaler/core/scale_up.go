@@ -275,15 +275,19 @@ func computeExpansionOption(context *context.AutoscalingContext, podEquivalenceG
 
 	for _, eg := range podEquivalenceGroups {
 		samplePod := eg.pods[0]
+
+		klog.Infof("DEBUG: Checking if Pod %q will fit on Node %q", samplePod.GetName(), nodeInfo.Node().GetName())
+		klog.Infof("DEBUG: Pod %q: NodeSelector: %+v", samplePod.GetName(), samplePod.Spec.NodeSelector)
+		klog.Infof("DEBUG: Node %q: Labels: %+v", nodeInfo.Node().GetName(), nodeInfo.Node().GetLabels())
 		if err := context.PredicateChecker.CheckPredicates(context.ClusterSnapshot, samplePod, nodeInfo.Node().Name); err == nil {
 			// add pods to option
 			option.Pods = append(option.Pods, eg.pods...)
 			// mark pod group as (theoretically) schedulable
 			eg.schedulable = true
 		} else {
-			klog.V(2).Infof("Pod %s can't be scheduled on %s, predicate checking error: %v", samplePod.Name, nodeGroup.Id(), err.VerboseMessage())
+			klog.Infof("DEBUG: Pod %s can't be scheduled on %s, predicate checking error: %v", samplePod.Name, nodeGroup.Id(), err.VerboseMessage())
 			if podCount := len(eg.pods); podCount > 1 {
-				klog.V(2).Infof("%d other pods similar to %s can't be scheduled on %s", podCount-1, samplePod.Name, nodeGroup.Id())
+				klog.Infof("DEBUG: %d other pods similar to %s can't be scheduled on %s", podCount-1, samplePod.Name, nodeGroup.Id())
 			}
 			eg.schedulingErrors[nodeGroup.Id()] = err
 		}
@@ -418,6 +422,7 @@ func ScaleUp(context *context.AutoscalingContext, processors *ca_processors.Auto
 			continue
 		}
 
+		klog.Infof("DEBUG: Computing expansion options with NodeGroup %q", nodeGroup.Id())
 		option, err := computeExpansionOption(context, podEquivalenceGroups, nodeGroup, nodeInfo, upcomingNodes)
 		if err != nil {
 			return &status.ScaleUpStatus{Result: status.ScaleUpError}, errors.ToAutoscalerError(errors.InternalError, err)

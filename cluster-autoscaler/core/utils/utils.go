@@ -80,6 +80,7 @@ func GetNodeInfosForGroups(nodes []*apiv1.Node, nodeInfoCache map[string]*schedu
 	for _, node := range nodes {
 		// Broken nodes might have some stuff missing. Skipping.
 		if !kube_util.IsNodeReadyAndSchedulable(node) {
+			klog.Infof("DEBUG: Node considered broken, not building nodegroup for node: %s", node.GetName())
 			continue
 		}
 		added, id, typedErr := processNode(node)
@@ -96,6 +97,7 @@ func GetNodeInfosForGroups(nodes []*apiv1.Node, nodeInfoCache map[string]*schedu
 		id := nodeGroup.Id()
 		seenGroups[id] = true
 		if _, found := result[id]; found {
+			klog.Infof("DEBUG: Template for NodeGroup %q built from current healthy Node", id)
 			continue
 		}
 
@@ -104,6 +106,7 @@ func GetNodeInfosForGroups(nodes []*apiv1.Node, nodeInfoCache map[string]*schedu
 			if nodeInfo, found := nodeInfoCache[id]; found {
 				if nodeInfoCopy, err := deepCopyNodeInfo(nodeInfo); err == nil {
 					result[id] = nodeInfoCopy
+					klog.Infof("DEBUG: Template for NodeGroup %q built from previously seen, healthy Node", id)
 					continue
 				}
 			}
@@ -121,6 +124,7 @@ func GetNodeInfosForGroups(nodes []*apiv1.Node, nodeInfoCache map[string]*schedu
 			}
 		}
 		result[id] = nodeInfo
+		klog.Infof("DEBUG: Template for NodeGroup %q built from NodeInfo Template", id)
 	}
 
 	// Remove invalid node groups from cache

@@ -233,6 +233,15 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 		klog.Errorf("Failed to get node list: %v", typedErr)
 		return typedErr
 	}
+	readyNodeNames := map[string]struct{}
+	for _, node := range readyNodes {
+		readyNodeNames[node.GetName()] = struct{}{}
+	}
+	for _, node := range allNodes {
+		_, ready := readyNodeNames[node.GetName()]
+		klog.Infof("DEBUG: Found node: %s (Ready: %v)", node.GetName(), ready)
+	}
+
 	originalScheduledPods, err := scheduledPodLister.List()
 	if err != nil {
 		klog.Errorf("Failed to list scheduled pods: %v", err)
@@ -402,6 +411,7 @@ func (a *StaticAutoscaler) RunOnce(currentTime time.Time) errors.AutoscalerError
 		scaleUpStart := time.Now()
 		metrics.UpdateLastTime(metrics.ScaleUp, scaleUpStart)
 
+		klog.Info("DEBUG: Starting ScaleUp")
 		scaleUpStatus, typedErr = ScaleUp(autoscalingContext, a.processors, a.clusterStateRegistry, unschedulablePodsToHelp, readyNodes, daemonsets, nodeInfosForGroups, a.ignoredTaints)
 
 		metrics.UpdateDurationFromStart(metrics.ScaleUp, scaleUpStart)
