@@ -33,6 +33,7 @@ require (
 	k8s.io/api v0.0.0
 	k8s.io/apimachinery v0.0.0
 	k8s.io/apiserver v0.0.0
+	k8s.io/autoscaler/cluster-autoscaler/cloudprovider/magnum/gophercloud v0.0.0-20200807122419-e3434e51c314
 	k8s.io/client-go v0.0.0
 	k8s.io/cloud-provider v0.0.0
 	k8s.io/component-base v0.0.0
